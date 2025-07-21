@@ -1,0 +1,27 @@
+{
+    "model": {
+        "name": "PP-DocLayout_plus-L",
+        "confidence_threshold": 0.5,
+        "layout_nms": true,
+        "use_gpu": false,
+        "lang": "en"
+    },
+    "processing": {
+        "max_workers": 8,
+        "pdf_dpi": 200,
+        "image_quality": 85
+    },
+    "hierarchy": {
+        "title_height_threshold": 20,
+        "heading_patterns": {
+            "h1": ["^\d+\.", "^[IVX]+\.", "^Chapter \d+", "^Section \d+"],
+            "h2": ["^\d+\.\d+", "^[A-Z]\.", "^\d+\.\d+ "],
+            "h3": ["^\d+\.\d+\.\d+", "^[a-z]\)", "^\([a-z]\)"]
+        }
+    },
+    "output": {
+        "format": "json",
+        "pretty_print": true,
+        "ensure_ascii": false
+    }
+}
