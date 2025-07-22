@@ -29,6 +29,7 @@ if [ $? -eq 0 ]; then
     echo "🚀 To test the image:"
     echo "   mkdir -p test_input test_output"
     echo "   cp your-file.pdf test_input/"
+    echo "   docker run --rm -v "$(pwd)/test_input:/app/input" -v "$(pwd)/test_output:/app/output" pdf-outline-extractor:v1.0"
     echo "   docker run --rm -v \$(pwd)/test_input:/app/input -v \$(pwd)/test_output:/app/output --network none pdf-outline-extractor:v1.0"
 else
     echo "❌ Docker build failed!"

@@ -34,8 +34,8 @@ COPY src/ ./src/
 COPY config.json .
 
 # Ensure the app can write to output directory
-RUN mkdir -p /app/input /app/output
-RUN chmod 755 /app/input /app/output
+RUN mkdir -p /app/input /app/output /app/debug_crops
+RUN chmod 755 /app/input /app/output /app/debug_crops
 
 # Run the main application
 CMD ["python", "main.py"]

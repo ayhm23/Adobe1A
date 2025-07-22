@@ -18,33 +18,7 @@ class LayoutDetector:
         )
 
         # Layout category mapping
-        self.category_mapping = {
-            0: "paragraph_title",
-            1: "image",
-            2: "text",
-            3: "title",
-            4: "table",
-            5: "figure",
-            6: "figure_caption",
-            7: "formula",
-            8: "table",
-            9: "table_caption",
-            10: "reference",
-            11: "doc_title",
-            12: "footnote",
-            13: "header",
-            14: "footer",
-            15: "algorithm",
-            16: "page_number",
-            17: "abstract",
-            18: "contents",
-            19: "seal",
-            20: "header_image",
-            21: "footer_image",
-            22: "aside_text"
-        }
-
-  
+    
         
     def detect_layout(self, image: np.ndarray, page_num: int) -> List[Dict[str, Any]]:
         """
@@ -65,6 +39,7 @@ class LayoutDetector:
                     boxes_data = res_dict['boxes']
                    
                     for box_data in boxes_data:
+                        # print(f"[DEBUG] Detected box: {box_data}")
                         score = box_data.get('score', 0.0)
                         if score < Config.CONFIDENCE_THRESHOLD:
                             continue
@@ -85,7 +60,6 @@ class LayoutDetector:
                             "height": height,
                             "area": area,
                             "aspect_ratio": aspect_ratio,
-                            "text": self._extract_text_from_region(image, x1, y1, x2, y2),
                             "page": page_num,
                             "center_x": (x1 + x2) / 2,
                             "center_y": (y1 + y2) / 2
@@ -102,8 +76,13 @@ class LayoutDetector:
                 if elem['score'] >= 0
             ]
 
-            allowed_labels = ['title', 'paragraph_title', 'doc_title', 'heading', 'section_title']
+            allowed_labels = ['title', 'paragraph_title', 'doc_title', 'heading', 'section_title', 'figure_title', 'table_title']
             filtered_elements = self.filter_elements_by_type(filtered_elements, allowed_labels)
+
+            # Extract text only for filtered elements (after heading filtration)
+            for elem in filtered_elements:
+                x1, y1, x2, y2 = elem['bbox']
+                elem['text'] = self._extract_text_from_region(image, x1, y1, x2, y2)
 
             print("[DEBUG] layout_elements after score filtering:")
             for elem in filtered_elements:
@@ -120,20 +99,59 @@ class LayoutDetector:
 
 
     def _extract_text_from_region(self, image: np.ndarray, x1: float, y1: float, x2: float, y2: float) -> str:
-        """Dummy text extraction from a region. For real implementation, run OCR here."""
+        """Improved text extraction with robust OCR preprocessing."""
         try:
+            # Ensure integer coordinates and clamp within image
             x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+           
             h, w = image.shape[:2]
-            x1 = max(0, min(x1, w-1))
-            y1 = max(0, min(y1, h-1))
-            x2 = max(x1+1, min(x2, w))
-            y2 = max(y1+1, min(y2, h))
-            cropped = image[y1:y2, x1:x2]
-            text = pytesseract.image_to_string(cropped)
-            return text.strip()
+            x1i = max(0, min(int(np.floor(x1)), w-1))
+            y1i = max(0, min(int(np.floor(y1)), h-1))
+            x2i = max(x1i+1, min(int(np.ceil(x2)), w))
+            y2i = max(y1i+1, min(int(np.ceil(y2)), h))
+            cropped = image[y1i:y2i, x1i:x2i]
+
+            # Save cropped image for debugging
+            import os
+            import time
+            debug_dir = "/app/debug_crops"
+            os.makedirs(debug_dir, exist_ok=True)
+            timestamp = int(time.time() * 1000000)  # microseconds for uniqueness
+            crop_filename = f"{debug_dir}/crop_{timestamp}_{x1i}_{y1i}_{x2i}_{y2i}.png"
+            cv2.imwrite(crop_filename, cropped)
+            print(f"[DEBUG] Saved cropped image: {crop_filename}")
+
+            # Step 1: Convert to grayscale
+            gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
+            cv2.imwrite(f"{debug_dir}/gray_{timestamp}_{x1i}_{y1i}_{x2i}_{y2i}.png", gray)
+
+            # Step 2: Adaptive threshold to binarize
+            binary = cv2.adaptiveThreshold(
+                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                cv2.THRESH_BINARY, 15, 8
+            )
+            cv2.imwrite(f"{debug_dir}/binary_{timestamp}_{x1i}_{y1i}_{x2i}_{y2i}.png", binary)
+
+            # Step 3 (Optional): Morphology to clean specks
+            kernel = np.ones((1, 1), np.uint8)
+            cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+            cv2.imwrite(f"{debug_dir}/cleaned_{timestamp}_{x1i}_{y1i}_{x2i}_{y2i}.png", cleaned)
+            
+            # Step 4: Try multiple Tesseract configurations
+            ocr_configs = [
+                '--psm 6',   # Uniform block of text
+                '--psm 7',   # Single text line
+                '--psm 13',  # Raw line
+            ]
+            for config in ocr_configs:
+                text = pytesseract.image_to_string(cleaned, config=config)
+                if text and text.strip():
+                    return text.strip()
+            return "Text region"
         except Exception as e:
             print(f"OCR extraction error: {e}")
             return "Text region"
+
 
 
     def filter_elements_by_type(self, elements: List[Dict], 
