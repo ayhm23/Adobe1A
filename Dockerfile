@@ -1,12 +1,11 @@
-FROM --platform=linux/amd64 python:3.9-slim
-
+FROM python:3.9-slim
 # Install system dependencies for PaddleOCR and PyMuPDF
 
 
 RUN apt-get update && apt-get install -y tesseract-ocr
 RUN pip install pytesseract pillow
 
-# ...existing code...
+
 RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     libsm6 \

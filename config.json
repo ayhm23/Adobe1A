@@ -9,14 +9,33 @@
     "processing": {
         "max_workers": 8,
         "pdf_dpi": 200,
-        "image_quality": 85
+        "image_quality": 90
     },
     "hierarchy": {
         "title_height_threshold": 20,
         "heading_patterns": {
-            "h1": ["^\d+\.", "^[IVX]+\.", "^Chapter \d+", "^Section \d+"],
-            "h2": ["^\d+\.\d+", "^[A-Z]\.", "^\d+\.\d+ "],
-            "h3": ["^\d+\.\d+\.\d+", "^[a-z]\)", "^\([a-z]\)"]
+            "h1": [
+                "^\\d+\\.",
+                "^[IVX]+\\.",
+                "^Chapter \\d+",
+                "^Section \\d+",
+                "^\\d+ [A-Z]",
+                "^[A-Z] "
+            ],
+            "h2": [
+                "^\\d+\\.\\d+",
+                "^\\d+\\.\\d+ ",
+                "^[A-Z]\\.",
+                "^\\d+\\.\\d+\\.",
+                "^[A-Z][a-z]+ \\d+"
+            ],
+            "h3": [
+                "^\\d+\\.\\d+\\.\\d+",
+                "^[a-z]\\)",
+                "^\\([a-z]\\)",
+                "^\\([0-9]\\)",
+                "^[a-z]\\."
+            ]
         }
     },
     "output": {

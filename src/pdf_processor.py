@@ -53,7 +53,8 @@ class PDFProcessor:
 
                 if image is not None:
                     # Detect layout elements
-                    page_elements = self.layout_detector.detect_layout(image, page_num + 1)
+                    pdf_name = pdf_path.stem  # Get filename without extension
+                    page_elements = self.layout_detector.detect_layout(image, page_num + 1, pdf_name)
                     all_layout_elements.extend(page_elements)
 
                     logger.debug(f"Page {page_num + 1}: Found {len(page_elements)} layout elements")

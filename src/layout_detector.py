@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+import re   
 from typing import List, Dict, Any
 from paddleocr import LayoutDetection
 import pytesseract
@@ -20,7 +21,7 @@ class LayoutDetector:
         # Layout category mapping
     
         
-    def detect_layout(self, image: np.ndarray, page_num: int) -> List[Dict[str, Any]]:
+    def detect_layout(self, image: np.ndarray, page_num: int, pdf_name: str = "unknown") -> List[Dict[str, Any]]:
         """
         Detect layout elements in an image using PP-DocLayoutPlus-L model.
         """
@@ -70,19 +71,16 @@ class LayoutDetector:
             # Sort by top-to-bottom
             layout_elements.sort(key=lambda x: x['center_y'])
 
-        
-            filtered_elements = [
-                elem for elem in layout_elements
-                if elem['score'] >= 0
-            ]
-
             allowed_labels = ['title', 'paragraph_title', 'doc_title', 'heading', 'section_title', 'figure_title', 'table_title']
-            filtered_elements = self.filter_elements_by_type(filtered_elements, allowed_labels)
+            filtered_elements = []
 
-            # Extract text only for filtered elements (after heading filtration)
-            for elem in filtered_elements:
-                x1, y1, x2, y2 = elem['bbox']
-                elem['text'] = self._extract_text_from_region(image, x1, y1, x2, y2)
+            # Filter and extract text in one loop
+            for elem in layout_elements:
+                print(f"[DEBUG] Processing element: {elem['label']} with score {elem['score']}")
+                if elem['score'] >= 0.55 and elem['label'] in allowed_labels:
+                    x1, y1, x2, y2 = elem['bbox']
+                    elem['text'] = self._extract_text_from_region(image, x1, y1, x2, y2, pdf_name)
+                    filtered_elements.append(elem)
 
             print("[DEBUG] layout_elements after score filtering:")
             for elem in filtered_elements:
@@ -96,13 +94,64 @@ class LayoutDetector:
             print(f"[LayoutDetector] Error: {e}")
             return []
 
+    def _clean_extracted_text(self, text: str) -> str:
+        """Clean extracted text by removing unwanted elements."""
+        import re
+        
+        if not text:
+            return ""
+        
+        # Remove newlines and replace with spaces
+        text = text.replace('\n', ' ').replace('\r', ' ')
+        
+        # Enhanced URL/link removal patterns
+        url_patterns = [
+            r'https?://\S+',                    # http:// or https:// URLs
+            r'www\s*\.\s*\S+',                 # www. URLs (with possible spaces)
+            r'WWW\s*\.\s*\S+',                 # WWW. URLs (with possible spaces)
+            r'\S+\s*\.\s*com\S*',              # .com domains (with possible spaces)
+            r'\S+\s*\.\s*org\S*',              # .org domains (with possible spaces)
+            r'\S+\s*\.\s*net\S*',              # .net domains (with possible spaces)
+            r'\S+\s*\.\s*edu\S*',              # .edu domains (with possible spaces)
+            r'\S+\s*\.\s*gov\S*',              # .gov domains (with possible spaces)
+            r'\S+\s*\.\s*COM\S*',              # Uppercase domains (with possible spaces)
+            r'WWW\s*\.\s*[A-Z]+[A-Z0-9]*',     # Specific pattern for WWW .TOPJUMPCOM
+            r'www\s*\.\s*[a-z]+[a-z0-9]*',     # Lowercase version
+        ]
+        
+        for pattern in url_patterns:
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+        
+        # Remove email addresses
+        text = re.sub(r'\S+@\S+\.\S+', '', text)
+        
+        # Remove common social media handles and hashtags
+        text = re.sub(r'@\w+', '', text)
+        text = re.sub(r'#\w+', '', text)
+        
+        # Remove phone numbers (basic patterns)
+        text = re.sub(r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b', '', text)
+        
+        # Remove excessive whitespace (multiple spaces, tabs)
+        text = re.sub(r'\s+', ' ', text)
+        
+        # Remove leading/trailing whitespace
+        text = text.strip()
+        
+        # Remove common OCR artifacts
+        text = re.sub(r'[|_]{2,}', '', text)  # Lines of underscores or pipes
+        text = re.sub(r'[-]{3,}', '', text)   # Lines of dashes
+        
+        # Remove standalone punctuation
+        text = re.sub(r'\s+[!.,:;]+\s*$', '', text)  # Trailing punctuation
+        
+        return text
 
-
-    def _extract_text_from_region(self, image: np.ndarray, x1: float, y1: float, x2: float, y2: float) -> str:
+    def _extract_text_from_region(self, image: np.ndarray, x1: float, y1: float, x2: float, y2: float, pdf_name: str = "unknown") -> str:
         """Improved text extraction with robust OCR preprocessing."""
         try:
             # Ensure integer coordinates and clamp within image
-            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+            # x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
            
             h, w = image.shape[:2]
             x1i = max(0, min(int(np.floor(x1)), w-1))
@@ -111,31 +160,20 @@ class LayoutDetector:
             y2i = max(y1i+1, min(int(np.ceil(y2)), h))
             cropped = image[y1i:y2i, x1i:x2i]
 
-            # Save cropped image for debugging
+            # Save cropped image for debugging in separate folder per PDF
             import os
             import time
-            debug_dir = "/app/debug_crops"
+            debug_dir = f"/app/debug_crops/{pdf_name}"
             os.makedirs(debug_dir, exist_ok=True)
             timestamp = int(time.time() * 1000000)  # microseconds for uniqueness
             crop_filename = f"{debug_dir}/crop_{timestamp}_{x1i}_{y1i}_{x2i}_{y2i}.png"
-            cv2.imwrite(crop_filename, cropped)
+            # cv2.imwrite(crop_filename, cropped)
             print(f"[DEBUG] Saved cropped image: {crop_filename}")
 
             # Step 1: Convert to grayscale
             gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
             cv2.imwrite(f"{debug_dir}/gray_{timestamp}_{x1i}_{y1i}_{x2i}_{y2i}.png", gray)
 
-            # Step 2: Adaptive threshold to binarize
-            binary = cv2.adaptiveThreshold(
-                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                cv2.THRESH_BINARY, 15, 8
-            )
-            cv2.imwrite(f"{debug_dir}/binary_{timestamp}_{x1i}_{y1i}_{x2i}_{y2i}.png", binary)
-
-            # Step 3 (Optional): Morphology to clean specks
-            kernel = np.ones((1, 1), np.uint8)
-            cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
-            cv2.imwrite(f"{debug_dir}/cleaned_{timestamp}_{x1i}_{y1i}_{x2i}_{y2i}.png", cleaned)
             
             # Step 4: Try multiple Tesseract configurations
             ocr_configs = [
@@ -144,9 +182,11 @@ class LayoutDetector:
                 '--psm 13',  # Raw line
             ]
             for config in ocr_configs:
-                text = pytesseract.image_to_string(cleaned, config=config)
+                text = pytesseract.image_to_string(gray, config=config)
                 if text and text.strip():
-                    return text.strip()
+                    cleaned_text = self._clean_extracted_text(text)
+                    if cleaned_text:
+                        return cleaned_text
             return "Text region"
         except Exception as e:
             print(f"OCR extraction error: {e}")
