@@ -5,6 +5,7 @@ import numpy as np
 import cv2
 import time
 import logging
+import os
 from pathlib import Path
 from typing import Dict, List, Any
 
@@ -22,8 +23,12 @@ class PDFProcessor:
         # Load configuration
         Config.load_config()
 
-        # Initialize components (separate instances for each process)
-        self.layout_detector = LayoutDetector()
+        # Get model directory from environment or use default
+        model_dir = os.getenv('MODEL_DIR', '/opt/pp_doclayout')
+        model_path = Path(model_dir) if model_dir else None
+
+        # Initialize components with pre-baked model path
+        self.layout_detector = LayoutDetector(model_path=model_path)
         self.hierarchy_manager = HierarchyManager()
 
     def process_pdf(self, pdf_path: Path) -> Dict[str, Any]:

@@ -1,9 +1,11 @@
 import numpy as np
 import cv2
 import re   
+import time
 from typing import List, Dict, Any
 from paddleocr import LayoutDetection
 import pytesseract
+import os
 
 from .config import Config
 
@@ -11,20 +13,50 @@ from .config import Config
 class LayoutDetector:
     """PaddleOCR PP-DocLayoutPlus-L layout detection wrapper."""
 
-    def __init__(self):
+    def __init__(self, model_path=None):
         """Initialize the layout detection model."""
-        self.model = LayoutDetection(
-            model_name=Config.MODEL_NAME,  # e.g., "PP-DocLayout_plus_L"
-            layout_nms=Config.LAYOUT_NMS
-        )
+        # Check for provided model path first
+        if model_path and os.path.exists(model_path) and self._validate_hf_model(model_path):
+            print(f"[DEBUG] Using provided model from {model_path}")
+            self.model = LayoutDetection(model_dir=model_path)
+        else:
+            # Check for HuggingFace model path
+            hf_model_path = "/opt/pp_doclayout"
+            
+            if os.path.exists(hf_model_path) and self._validate_hf_model(hf_model_path):
+                print(f"[DEBUG] Using HuggingFace model from {hf_model_path}")
+                self.model = LayoutDetection(model_dir=hf_model_path)
+            else:
+                print(f"[DEBUG] HuggingFace model not found, using default model")
+                # Fallback to default model
+                self.model = LayoutDetection(
+                    model_name=Config.MODEL_NAME,
+                    layout_nms=Config.LAYOUT_NMS
+                )
+        
+        # Define heading labels for filtering
+        self.heading_labels = {
+            "title", "heading", "section_title", "doc_title",
+            "paragraph_title", "figure_title", "abstract"
+        }
 
-        # Layout category mapping
+    def _validate_hf_model(self, model_path: str) -> bool:
+        """Validate that the HuggingFace model has required files."""
+        required_files = ["inference.pdiparams", "inference.yml"]
+        for file in required_files:
+            if not os.path.exists(os.path.join(model_path, file)):
+                print(f"[DEBUG] Missing required file: {file}")
+                return False
+        return True
     
         
     def detect_layout(self, image: np.ndarray, page_num: int, pdf_name: str = "unknown") -> List[Dict[str, Any]]:
         """
         Detect layout elements in an image using PP-DocLayoutPlus-L model.
         """
+        detection_start_time = time.time()
+        print(f"[DEBUG] Starting layout detection for page {page_num} at {time.strftime('%H:%M:%S', time.localtime(detection_start_time))}")
+        
         try:
             # Run layout detection  
             results = self.model.predict(image, batch_size=1, layout_nms=Config.LAYOUT_NMS)
@@ -76,22 +108,27 @@ class LayoutDetector:
 
             # Filter and extract text in one loop
             for elem in layout_elements:
-                print(f"[DEBUG] Processing element: {elem['label']} with score {elem['score']}")
+                # print(f"[DEBUG] Processing element: {elem['label']} with score {elem['score']}")
                 if elem['score'] >= 0.55 and elem['label'] in allowed_labels:
                     x1, y1, x2, y2 = elem['bbox']
                     elem['text'] = self._extract_text_from_region(image, x1, y1, x2, y2, pdf_name)
                     filtered_elements.append(elem)
 
-            print("[DEBUG] layout_elements after score filtering:")
+            # print("[DEBUG] layout_elements after score filtering:")
             for elem in filtered_elements:
                 print(f"  label: {elem['label']}, score: {elem['score']}")
 
+            detection_end_time = time.time()
+            detection_duration = detection_end_time - detection_start_time
+            print(f"[DEBUG] Layout detection completed for page {page_num} at {time.strftime('%H:%M:%S', time.localtime(detection_end_time))} (took {detection_duration:.2f}s)")
             print("\n\n")
 
             return filtered_elements
 
         except Exception as e:
-            print(f"[LayoutDetector] Error: {e}")
+            detection_end_time = time.time()
+            detection_duration = detection_end_time - detection_start_time
+            print(f"[LayoutDetector] Error after {detection_duration:.2f}s: {e}")
             return []
 
     def _clean_extracted_text(self, text: str) -> str:
@@ -161,18 +198,18 @@ class LayoutDetector:
             cropped = image[y1i:y2i, x1i:x2i]
 
             # Save cropped image for debugging in separate folder per PDF
-            import os
-            import time
-            debug_dir = f"/app/debug_crops/{pdf_name}"
-            os.makedirs(debug_dir, exist_ok=True)
-            timestamp = int(time.time() * 1000000)  # microseconds for uniqueness
-            crop_filename = f"{debug_dir}/crop_{timestamp}_{x1i}_{y1i}_{x2i}_{y2i}.png"
+            # import os
+            # import time
+            # debug_dir = f"/app/debug_crops/{pdf_name}"
+            # os.makedirs(debug_dir, exist_ok=True)
+            # timestamp = int(time.time() * 1000000)  # microseconds for uniqueness
+            # crop_filename = f"{debug_dir}/crop_{timestamp}_{x1i}_{y1i}_{x2i}_{y2i}.png"
             # cv2.imwrite(crop_filename, cropped)
-            print(f"[DEBUG] Saved cropped image: {crop_filename}")
+            # print(f"[DEBUG] Saved cropped image: {crop_filename}")
 
             # Step 1: Convert to grayscale
             gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
-            cv2.imwrite(f"{debug_dir}/gray_{timestamp}_{x1i}_{y1i}_{x2i}_{y2i}.png", gray)
+            # cv2.imwrite(f"{debug_dir}/gray_{timestamp}_{x1i}_{y1i}_{x2i}_{y2i}.png", gray)
 
             
             # Step 4: Try multiple Tesseract configurations
@@ -214,7 +251,5 @@ class LayoutDetector:
 
     def get_heading_candidates(self, elements: List[Dict]) -> List[Dict]:
         """Get elements that could be section headings."""
-        heading_labels = ['paragraph_title', 'title', 'doc_title', 'heading', 'section_title']
-        return self.filter_elements_by_type(elements, heading_labels)
         heading_labels = ['paragraph_title', 'title', 'doc_title', 'heading', 'section_title']
         return self.filter_elements_by_type(elements, heading_labels)
