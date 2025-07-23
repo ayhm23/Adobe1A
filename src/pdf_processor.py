@@ -59,7 +59,23 @@ class PDFProcessor:
                 if image is not None:
                     # Detect layout elements
                     pdf_name = pdf_path.stem  # Get filename without extension
-                    page_elements = self.layout_detector.detect_layout(image, page_num + 1, pdf_name)
+                    page_elements = self.layout_detector.detect_layout(image, page_num + 1, pdf_name, pdf_path)
+                    
+                    # Extract text for all filtered elements before closing doc
+                    for elem in page_elements:
+                        x1, y1, x2, y2 = elem['bbox']
+                        scale = 72.0 / Config.PDF_DPI
+                        rect = fitz.Rect(x1 * scale, y1 * scale, x2 * scale, y2 * scale)
+                        text_extraction_start = time.time()
+                        text = page.get_text("text", clip=rect, flags=fitz.TEXTFLAGS_TEXT).strip()
+                        if not text:
+                            words = page.get_text("words", clip=rect)
+                            if words:
+                                text = " ".join(w[4] for w in words)
+                        elem['text'] = " ".join(text.split()) if text else ""
+                        text_extraction_end = time.time()
+                        # print(f"[DEBUG] Text extraction for element took {text_extraction_end - text_extraction_start:.2f} seconds")
+                    
                     all_layout_elements.extend(page_elements)
 
                     logger.debug(f"Page {page_num + 1}: Found {len(page_elements)} layout elements")
@@ -78,6 +94,8 @@ class PDFProcessor:
             processing_time = time.time() - start_time
             logger.info(f"Processed {pdf_path.name} in {processing_time:.2f}s - "
                        f"Found {len(outline_data['outline'])} headings")
+            print(f"[DEBUG] Processed {pdf_path.name} in {processing_time:.2f} seconds - "
+                  f"Found {len(outline_data['outline'])} headings")
 
             return outline_data
 
@@ -88,6 +106,62 @@ class PDFProcessor:
                 "outline": [],
                 "error": str(e)
             }
+        
+        def extract_text_fast(self, pdf_path: str,
+                      page_number: int,
+                      x1: float, y1: float, x2: float, y2: float,
+                      dpi: int = 300) -> str:
+            """
+            Fast text extraction from a rectangular region of a PDF page.
+            Falls back to OCR only if no digital text is present.
+
+            Parameters
+            ----------
+            pdf_path : str
+                Path to the PDF file.
+            page_number : int
+                Zero-based page index.
+            x1, y1, x2, y2 : float
+                Rectangle in pixel coordinates at the chosen DPI.
+            dpi : int, optional
+                Resolution assumed by the pixel coords (default 300).
+
+            Returns
+            -------
+            str
+                Trimmed text from the region (empty string if nothing found).
+            """
+            # 1 Load page -------------------------------------------------------------
+            doc = fitz.open(pdf_path)
+                            
+            start_time4 = time.time()
+            page = doc[page_number]
+
+            # 2 Convert pixel rectangle → PDF points ---------------------------------
+            # PDF units are 1/72 inch; pixel→pt = px * 72 / dpi
+            scale = 72.0 / dpi
+            rect = fitz.Rect(x1 * scale, y1 * scale, x2 * scale, y2 * scale)
+
+            # 3 Try native extraction first ------------------------------------------
+            # Check for digital glyphs by attempting to extract text
+            text = page.get_text("text",
+                                clip=rect,
+                                flags=fitz.TEXTFLAGS_TEXT).strip()
+            end_time4 = time.time()
+            print(f"[DEBUG] Text extraction 1 took {end_time4 - start_time4:.2f} seconds")
+            if text:
+                doc.close()
+                return " ".join(text.split())  # normalize whitespace
+
+            # Secondary attempt—word-level filter for micro-rects
+            # words = page.get_text("words", clip=rect)
+            # if words:
+            #     doc.close()
+            #     return " ".join(w[4] for w in words)
+
+            doc.close()
+            return ""  # nothing found
+
 
     def _page_to_image(self, page: fitz.Page) -> np.ndarray:
         """
