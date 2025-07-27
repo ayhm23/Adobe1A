@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-PDF Outline Extractor using PP-DocLayoutPlus-L
+PDF Outline Extractor using PP-DocLayout-M
 Adobe India Hackathon Round 1A Solution
 
 Extracts structured document outlines (title, H1/H2/H3 headings) from PDFs
-using PaddleOCR PP-DocLayoutPlus-L model with multi-core processing.
+using PaddleOCR PP-DocLayout-M model with multi-core processing.
 """
 
 import os
@@ -90,5 +90,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-#!/usr/bin/env python3

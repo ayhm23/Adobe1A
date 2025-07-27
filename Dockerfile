@@ -1,71 +1,54 @@
-FROM python:3.9-slim
+FROM --platform=linux/amd64 python:3.9-slim
 
-# Install system dependencies including git-lfs for HuggingFace model download
+# Install minimal system dependencies including OpenGL for headless OpenCV
 RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
+    libglib2.0-0 \
+    libgomp1 \
+    libgfortran5 \
+    libgl1-mesa-glx \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender-dev \
-    libgomp1 \
-    libglib2.0-dev \
-    libgl1-mesa-glx \
-    git \
-    git-lfs \
+    libfontconfig1 \
+    wget \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages
 RUN pip install --upgrade pip
-RUN pip install pytesseract pillow
 
-# Install huggingface-hub for model download
-RUN pip install -U "huggingface_hub[cli]"
+# Install specific OpenCV version that works well in containers
+RUN pip install --no-cache-dir opencv-python-headless==4.8.0.76
 
-# Initialize git-lfs
-RUN git lfs install
-
-# Download PP-DocLayout_plus-L model from HuggingFace using multiple methods
-ENV MODEL_DIR=/opt/pp_doclayout
-
-# Method 1: Use huggingface-cli (most reliable)
-RUN mkdir -p $MODEL_DIR && \
-    huggingface-cli download PaddlePaddle/PP-DocLayout_plus-L \
-    --local-dir $MODEL_DIR \
-    --local-dir-use-symlinks False
-
-# Method 2: Fallback using git clone (if above fails)
-RUN if [ ! -f "$MODEL_DIR/inference.pdiparams" ]; then \
-        echo "Trying git clone method..." && \
-        rm -rf $MODEL_DIR && \
-        git clone https://huggingface.co/PaddlePaddle/PP-DocLayout_plus-L $MODEL_DIR && \
-        rm -rf $MODEL_DIR/.git; \
-    fi
-
-
-# Verify model files exist
-RUN ls -la $MODEL_DIR/ && \
-    echo "Model directory contents:" && \
-    find $MODEL_DIR -type f -name "*.pdiparams" -o -name "*.yml" -o -name "*.json" | head -10
-
+RUN pip install pillow 
 WORKDIR /app
 
-# Copy requirements and install
+# Copy application files
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY main.py .
+# # Pre-download the model during build (when network is available)
+# RUN python -c "import os; os.makedirs('/root/.paddlex/official_models', exist_ok=True)"
+
+# RUN python -c "from paddleocr import LayoutDetection; LayoutDetection(model_name='PP-DocLayout-M')" || echo "Model download failed, will retry at runtime"
+
+COPY main.py config.json ./
 COPY src/ ./src/
-COPY config.json .
+# COPY model_cache/official_models /root/.paddlex/official_models
+COPY models/PP-DocLayout-M /opt/pp_doclayout_M
+# Create I/O directories and model cache
+RUN mkdir -p /app/input /app/output /root/.paddlex \
+    && chmod 755 /app/input /app/output 
 
-# Create directories
-RUN mkdir -p /app/input /app/output /app/debug_crops /root/.paddlex/official_models
-RUN chmod 755 /app/input /app/output /app/debug_crops
-
-# Set environment variables
-ENV MODEL_PATH=/opt/pp_doclayout
+# Environment variables
 ENV PADDLEX_HOME=/root/.paddlex
 
-# Run the main application
+# Force headless mode and disable display
+ENV OPENCV_HEADLESS=1
+ENV CUDA_VISIBLE_DEVICES=""
+ENV OMP_NUM_THREADS=1
+ENV DISPLAY=""
+
+# Default command
 CMD ["python", "main.py"]

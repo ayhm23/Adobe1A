@@ -19,7 +19,8 @@ class Config:
     IMAGE_QUALITY = 85
 
     # Model settings
-    MODEL_NAME = "PP-DocLayout_plus-L" 
+    # MODEL_NAME  using PP-DocLayout-M instead
+    MODEL_NAME = "PP-DocLayout-M" 
     CONFIDENCE_THRESHOLD = 0.5
     LAYOUT_NMS = True
     USE_GPU = False

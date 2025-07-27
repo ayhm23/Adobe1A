@@ -1,6 +1,6 @@
 {
     "model": {
-        "name": "PP-DocLayoutPlus-L",
+        "name": "PP-DocLayout-M",
         "confidence_threshold": 0.3,
         "layout_nms": true,
         "use_gpu": false,
@@ -14,9 +14,9 @@
     "hierarchy": {
         "title_height_threshold": 15,
         "heading_patterns": {
-            "h1": ["^\d+\.", "^[IVX]+\.", "^Chapter \d+"],
-            "h2": ["^\d+\.\d+", "^[A-Z]\."],
-            "h3": ["^\d+\.\d+\.\d+", "^[a-z]\)"]
+            "h1": ["^\\d+\\.", "^[IVX]+\\.", "^Chapter \\d+"],
+            "h2": ["^\\d+\\.\\d+", "^[A-Z]\\."],
+            "h3": ["^\\d+\\.\\d+\\.\\d+", "^[a-z]\\)"]
         }
     },
     "output": {

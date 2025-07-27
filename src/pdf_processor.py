@@ -5,9 +5,9 @@ import numpy as np
 import cv2
 import time
 import logging
-import os
 from pathlib import Path
 from typing import Dict, List, Any
+
 
 from .layout_detector import LayoutDetector
 from .hierarchy_manager import HierarchyManager
@@ -16,19 +16,15 @@ from .config import Config
 logger = logging.getLogger(__name__)
 
 class PDFProcessor:
-    """Main PDF processing class with PP-DocLayoutPlus integration."""
+    """Main PDF processing class with PP-DocLayout-M integration."""
 
     def __init__(self):
         """Initialize PDF processor with layout detection and hierarchy management."""
         # Load configuration
         Config.load_config()
 
-        # Get model directory from environment or use default
-        model_dir = os.getenv('MODEL_DIR', '/opt/pp_doclayout')
-        model_path = Path(model_dir) if model_dir else None
-
-        # Initialize components with pre-baked model path
-        self.layout_detector = LayoutDetector(model_path=model_path)
+        # Initialize components (separate instances for each process)
+        self.layout_detector = LayoutDetector()
         self.hierarchy_manager = HierarchyManager()
 
     def process_pdf(self, pdf_path: Path) -> Dict[str, Any]:
@@ -59,9 +55,8 @@ class PDFProcessor:
                 if image is not None:
                     # Detect layout elements
                     pdf_name = pdf_path.stem  # Get filename without extension
-                    page_elements = self.layout_detector.detect_layout(image, page_num + 1, pdf_name, pdf_path)
-                    
-                    # Extract text for all filtered elements before closing doc
+                    page_elements = self.layout_detector.detect_layout(image, page_num + 1, pdf_name)
+
                     for elem in page_elements:
                         x1, y1, x2, y2 = elem['bbox']
                         scale = 72.0 / Config.PDF_DPI
@@ -72,10 +67,11 @@ class PDFProcessor:
                             words = page.get_text("words", clip=rect)
                             if words:
                                 text = " ".join(w[4] for w in words)
+                        text = self._clean_extracted_text(text)
                         elem['text'] = " ".join(text.split()) if text else ""
                         text_extraction_end = time.time()
-                        # print(f"[DEBUG] Text extraction for element took {text_extraction_end - text_extraction_start:.2f} seconds")
-                    
+                        print(f"[DEBUG] Text extraction for element took {text_extraction_end - text_extraction_start:.2f} seconds")
+
                     all_layout_elements.extend(page_elements)
 
                     logger.debug(f"Page {page_num + 1}: Found {len(page_elements)} layout elements")
@@ -94,8 +90,6 @@ class PDFProcessor:
             processing_time = time.time() - start_time
             logger.info(f"Processed {pdf_path.name} in {processing_time:.2f}s - "
                        f"Found {len(outline_data['outline'])} headings")
-            print(f"[DEBUG] Processed {pdf_path.name} in {processing_time:.2f} seconds - "
-                  f"Found {len(outline_data['outline'])} headings")
 
             return outline_data
 
@@ -106,61 +100,61 @@ class PDFProcessor:
                 "outline": [],
                 "error": str(e)
             }
+
+    
+    def _clean_extracted_text(self, text: str) -> str:
+        """Clean extracted text by removing unwanted elements."""
+        import re
         
-        def extract_text_fast(self, pdf_path: str,
-                      page_number: int,
-                      x1: float, y1: float, x2: float, y2: float,
-                      dpi: int = 300) -> str:
-            """
-            Fast text extraction from a rectangular region of a PDF page.
-            Falls back to OCR only if no digital text is present.
+        if not text:
+            return ""
+        
+        # Remove newlines and replace with spaces
+        text = text.replace('\n', ' ').replace('\r', ' ')
+        
+        # Enhanced URL/link removal patterns
+        url_patterns = [
+            r'https?://\S+',                    # http:// or https:// URLs
+            r'www\s*\.\s*\S+',                 # www. URLs (with possible spaces)
+            r'WWW\s*\.\s*\S+',                 # WWW. URLs (with possible spaces)
+            r'\S+\s*\.\s*com\S*',              # .com domains (with possible spaces)
+            r'\S+\s*\.\s*org\S*',              # .org domains (with possible spaces)
+            r'\S+\s*\.\s*net\S*',              # .net domains (with possible spaces)
+            r'\S+\s*\.\s*edu\S*',              # .edu domains (with possible spaces)
+            r'\S+\s*\.\s*gov\S*',              # .gov domains (with possible spaces)
+            r'\S+\s*\.\s*COM\S*',              # Uppercase domains (with possible spaces)
+            r'WWW\s*\.\s*[A-Z]+[A-Z0-9]*',     # Specific pattern for WWW .TOPJUMPCOM
+            r'www\s*\.\s*[a-z]+[a-z0-9]*',     # Lowercase version
+        ]
+        
+        for pattern in url_patterns:
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+        
+        # Remove email addresses
+        text = re.sub(r'\S+@\S+\.\S+', '', text)
+        
+        # Remove common social media handles and hashtags
+        text = re.sub(r'@\w+', '', text)
+        text = re.sub(r'#\w+', '', text)
+        
+        # Remove phone numbers (basic patterns)
+        text = re.sub(r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b', '', text)
+        
+        # Remove excessive whitespace (multiple spaces, tabs)
+        text = re.sub(r'\s+', ' ', text)
+        
+        # Remove leading/trailing whitespace
+        text = text.strip()
+        
+        # Remove common OCR artifacts
+        text = re.sub(r'[|_]{2,}', '', text)  # Lines of underscores or pipes
+        text = re.sub(r'[-]{3,}', '', text)   # Lines of dashes
+        
+        # Remove standalone punctuation
+        text = re.sub(r'\s+[!.,:;]+\s*$', '', text)  # Trailing punctuation
+        
+        return text
 
-            Parameters
-            ----------
-            pdf_path : str
-                Path to the PDF file.
-            page_number : int
-                Zero-based page index.
-            x1, y1, x2, y2 : float
-                Rectangle in pixel coordinates at the chosen DPI.
-            dpi : int, optional
-                Resolution assumed by the pixel coords (default 300).
-
-            Returns
-            -------
-            str
-                Trimmed text from the region (empty string if nothing found).
-            """
-            # 1 Load page -------------------------------------------------------------
-            doc = fitz.open(pdf_path)
-                            
-            start_time4 = time.time()
-            page = doc[page_number]
-
-            # 2 Convert pixel rectangle → PDF points ---------------------------------
-            # PDF units are 1/72 inch; pixel→pt = px * 72 / dpi
-            scale = 72.0 / dpi
-            rect = fitz.Rect(x1 * scale, y1 * scale, x2 * scale, y2 * scale)
-
-            # 3 Try native extraction first ------------------------------------------
-            # Check for digital glyphs by attempting to extract text
-            text = page.get_text("text",
-                                clip=rect,
-                                flags=fitz.TEXTFLAGS_TEXT).strip()
-            end_time4 = time.time()
-            print(f"[DEBUG] Text extraction 1 took {end_time4 - start_time4:.2f} seconds")
-            if text:
-                doc.close()
-                return " ".join(text.split())  # normalize whitespace
-
-            # Secondary attempt—word-level filter for micro-rects
-            # words = page.get_text("words", clip=rect)
-            # if words:
-            #     doc.close()
-            #     return " ".join(w[4] for w in words)
-
-            doc.close()
-            return ""  # nothing found
 
 
     def _page_to_image(self, page: fitz.Page) -> np.ndarray:

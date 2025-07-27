@@ -2,11 +2,11 @@
     
     
     "model": {
-        "name": "PP-DocLayout_plus-L",
+        "name": "PP-DocLayout-M",
         "confidence_threshold": 0.5,
         "layout_nms": true,
         "use_gpu": false,
-        "lang": "en"
+        "lang": ["en", "ch"]
     },
     "processing": {
         "max_workers": 8,
