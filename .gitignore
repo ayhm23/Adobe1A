@@ -78,4 +78,5 @@ Thumbs.db
 # Project specific
 test_input/
 test_output/
+output/
 *.pdf

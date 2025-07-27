@@ -41,10 +41,10 @@ This solution addresses the Adobe India Hackathon Round 1A challenge with:
 | Metric | Specification | Our Solution |
 |--------|---------------|--------------|
 | Processing Time | ≤10 seconds (50 pages) | 6-8 seconds |
-| Model Size | ≤200MB | 126MB |
+| Model Size | ≤200MB | 23MB |
 | Memory Usage | ≤16GB | 2-4GB peak |
 | CPU Utilization | 8 cores | Full utilization |
-| Accuracy | High precision/recall | 90.4% mAP@0.5 |
+| Accuracy | High precision/recall | 80% mAP@0.5 |
 
 ## 🚀 Quick Start
 
@@ -55,6 +55,11 @@ chmod +x build.sh
 ./build.sh
 ```
 
+or
+
+```bash
+docker build --platform=linux/amd64 -t adobe1a .
+```
 ### 2. Prepare Input/Output Directories
 
 ```bash
@@ -98,7 +103,7 @@ The solution generates JSON files in the exact format specified:
 
 ### PP-DocLayoutPlus-L Integration
 
-- **Model**: PaddleOCR PP-DocLayoutPlus-L (126MB)
+- **Model**: PaddleOCR PP-DocLayoutPlus-L (23MB)
 - **Categories**: Detects 23 layout categories including titles, headings, text
 - **Performance**: 634ms/page CPU inference (normal mode)
 - **Accuracy**: 83.2% mAP@0.5 on diverse document types
